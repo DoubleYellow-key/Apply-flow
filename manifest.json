@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ApplyFlow 网申自动填写",
+  "version": "0.1.0",
+  "description": "秋招网申简历一键填充:结构化档案 + 规则匹配,只填不交,人工核对后提交",
+  "permissions": ["storage", "unlimitedStorage", "activeTab", "scripting", "sidePanel"],
+  "action": {
+    "default_title": "ApplyFlow 网申填写"
+  },
+  "side_panel": {
+    "default_path": "src/panel/index.html"
+  },
+  "options_page": "src/options/index.html",
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content/index.ts"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

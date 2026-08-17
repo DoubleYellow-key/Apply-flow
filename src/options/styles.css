@@ -1,0 +1,18 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 14px;
+  color: #1f2937;
+  background: #f5f6f8;
+}
+
+.page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
