@@ -19,7 +19,7 @@ async function extractPdfText(file: File): Promise<string> {
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(stubUrl, self.location.href).href
 
   const data = new Uint8Array(await file.arrayBuffer())
-  const doc = await pdfjs.getDocument({ data, isEvalSupported: false, useWorkerFetch: false }).promise
+  const doc = await pdfjs.getDocument({ data, useWorkerFetch: false }).promise
 
   const pageTexts: string[] = []
   for (let i = 1; i <= doc.numPages; i++) {
