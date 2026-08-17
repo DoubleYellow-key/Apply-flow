@@ -34,6 +34,23 @@ const FIXTURE = `
   <div class="row"><label>自我评价</label><textarea id="eval"></textarea></div>
   <div class="row"><label>简历附件</label><input type="file" id="resume-file"></div>
 
+  <!-- 提示文本在输入框上方、标题在更上方(真机常见版式) -->
+  <div class="row">
+    <span class="field-title">姓名</span>
+    <span class="tip">1-50字</span>
+    <input id="name-with-tip" type="text">
+  </div>
+  <div class="row">
+    <span class="field-title">项目描述</span>
+    <p class="tip">请简述项目背景与你的成果。</p>
+    <textarea id="pdesc"></textarea>
+  </div>
+  <div class="row">
+    <span class="field-title">家庭住址</span>
+    <span class="tip">最多50字</span>
+    <input id="addr" type="text">
+  </div>
+
   <h2>教育经历</h2>
   <div id="edu-container">
     <div class="edu-item">
@@ -105,5 +122,15 @@ describe('scanDocument', () => {
 
   it('生成结构签名', () => {
     expect(result.signature).toMatch(/^sig_/)
+  })
+
+  it('提示文本(1-50字/最多50字/整句)不当标签,取到更上方的标题', () => {
+    expect(result.fields.find((f) => f.fieldId.includes('addr'))).toBeUndefined() // 地址无同义词,但标签应正确
+    const addrField = result.fields.find((f) => f.label === '家庭住址')
+    expect(addrField?.kind).toBe('text')
+    expect(result.fields.find((f) => f.label === '姓名')).toBeTruthy()
+    expect(result.fields.find((f) => f.label === '项目描述')).toBeTruthy()
+    expect(result.fields.some((f) => f.label.includes('字'))).toBe(false)
+    expect(result.fields.some((f) => f.label.includes('。'))).toBe(false)
   })
 })

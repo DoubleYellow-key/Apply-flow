@@ -1,5 +1,19 @@
 // 标签提取:为表单控件找到其字段名称
 
+/** 提示/说明类文本(字数限制、请输入、必填项、整句描述),不能当字段标签 */
+const HINT_RES = [
+  /^\d+\s*[-~—–至]\s*\d+\s*字/, // 1-50字
+  /^(?:不超|最多|至多)?\s*\d+\s*字(?:以内|以上|限制|内|左右)?$/, // 50字以内
+  /字数[:：]/,
+  /^(?:请输入|请填写|请选择|建议)/,
+  /[。.;；]/, // 整句说明
+  /^必填/,
+]
+
+export function isHintText(t: string): boolean {
+  return HINT_RES.some((re) => re.test(t))
+}
+
 /** id 转义进属性选择器(部分环境无 CSS.escape) */
 function cssEscapeId(id: string): string {
   return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id.replace(/["\\]/g, '\\$&')
@@ -15,13 +29,13 @@ function stripControlText(label: Element, control: Element): string {
   return (clone.textContent ?? '').trim()
 }
 
-/** 向上/向前寻找文本元素(跳过纯图标与空节点) */
-function findTextSibling(start: Element | null): string {
+/** 向上寻找文本兄弟:跳过提示文本(如「1-50字」),直到找到字段标题 */
+export function findTextSibling(start: Element | null, maxDepth = 4): string {
   let sib = start
   let depth = 0
-  while (sib && depth < 3) {
+  while (sib && depth < maxDepth) {
     const t = (sib.textContent ?? '').trim()
-    if (t) return t
+    if (t && !isHintText(t)) return t
     sib = sib.previousElementSibling
     depth++
   }

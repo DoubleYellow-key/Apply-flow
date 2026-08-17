@@ -4,7 +4,7 @@ import type { FieldKind, ScanResult, ScannedField } from '../shared/messages'
 import { matchRepeaterTitle } from '../core/matcher'
 import { computeSignature } from '../core/signature'
 import { detectSystem } from './detect'
-import { findLabel, isVisible } from './label'
+import { findLabel, findTextSibling, isVisible } from './label'
 
 const CONTROL_SELECTOR = 'input, textarea, select, [contenteditable="true"], [role="combobox"]'
 const SKIP_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image', 'hidden'])
@@ -197,26 +197,16 @@ function inputOptionText(input: HTMLInputElement): string {
   return input.parentElement?.textContent?.trim() || input.value
 }
 
-/** radio/checkbox 组标签:从选项外层 label 的兄弟找,再找 fieldset legend / 表格行首格 / aria */
+/** radio/checkbox 组标签:从选项外层 label 的兄弟找(跳过提示文本),再找 legend / 表格行首格 / aria */
 function groupLabel(first: HTMLInputElement): string {
   // 选项常被 <label><input>男</label> 包裹,组标签在其外层 label 的兄弟里
   const wrap = first.closest('label') ?? first
-  let sib = wrap.previousElementSibling as Element | null
-  let depth = 0
-  while (sib && depth < 4) {
-    const t = (sib.textContent ?? '').trim()
-    if (t) return t
-    sib = sib.previousElementSibling
-    depth++
-  }
+  const sibText = findTextSibling(wrap.previousElementSibling as Element | null)
+  if (sibText) return sibText
   // 父级的前兄弟(组容器与标签分列的布局)
   if (wrap.parentElement) {
-    let ps = wrap.parentElement.previousElementSibling as Element | null
-    for (let d = 0; d < 2 && ps; d++) {
-      const t = (ps.textContent ?? '').trim()
-      if (t) return t
-      ps = ps.previousElementSibling as Element | null
-    }
+    const parentText = findTextSibling(wrap.parentElement.previousElementSibling as Element | null, 2)
+    if (parentText) return parentText
   }
   const legend = first.closest('fieldset')?.querySelector('legend')
   if (legend?.textContent?.trim()) return legend.textContent.trim()
