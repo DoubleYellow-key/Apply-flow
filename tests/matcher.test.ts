@@ -91,8 +91,7 @@ describe('matchOption', () => {
   })
 })
 
-describe('matchRepeaterTitle', () => {
-  it('识别常见区块标题', () => {
+describe('matchRepeaterTitle', () => {  it('识别常见区块标题', () => {
     expect(matchRepeaterTitle('教育经历')).toBe('educations')
     expect(matchRepeaterTitle('教育背景')).toBe('educations')
     expect(matchRepeaterTitle('实习经历')).toBe('works')
@@ -120,5 +119,39 @@ describe('computeSignature', () => {
     expect(computeSignature(a)).toBe(computeSignature(b))
     const c = [...a, { fieldId: 'f2', label: '手机', kind: 'text' as const }]
     expect(computeSignature(a)).not.toBe(computeSignature(c))
+  })
+})
+
+describe('开放题答案匹配', () => {
+  const answers = [
+    { id: 'a1', keywords: ['职业规划', '规划'], question: '你的职业规划是什么', answer: '三年内成长为资深工程师' },
+    { id: 'a2', keywords: ['为什么选择'], question: '为什么选择我们公司', answer: '贵司的平台与我的方向契合' },
+  ]
+
+  it('文本字段标签命中关键词时映射到答案', () => {
+    const fields = [
+      { fieldId: 'f0', label: '请谈谈你的职业规划', kind: 'text' as const },
+      { fieldId: 'f1', label: '为什么选择我们公司?', kind: 'text' as const },
+    ]
+    const mappings = buildMappings(fields, {}, answers)
+    expect(mappings[0].path).toBe('answers.a1')
+    expect(mappings[0].source).toBe('answer')
+    expect(mappings[1].path).toBe('answers.a2')
+  })
+
+  it('多答案命中时取关键词最长者', () => {
+    const fields = [{ fieldId: 'f0', label: '未来3-5年职业规划', kind: 'text' as const }]
+    expect(buildMappings(fields, {}, answers)[0].path).toBe('answers.a1')
+  })
+
+  it('规则已命中的字段优先走规则,不进答案库', () => {
+    const fields = [{ fieldId: 'f0', label: '自我评价', kind: 'text' as const }]
+    // 自我评价有规则,且不在答案库关键词中
+    expect(buildMappings(fields, {}, [{ id: 'x', keywords: ['其他'], question: '', answer: '' }])[0].source).toBe('rule')
+  })
+
+  it('非文本字段不进答案库', () => {
+    const fields = [{ fieldId: 'f0', label: '请选择职业规划方向', kind: 'select' as const }]
+    expect(buildMappings(fields, {}, answers)[0].path).toBeNull()
   })
 })

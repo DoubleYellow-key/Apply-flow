@@ -16,7 +16,7 @@ const SYSTEM_NAMES: Record<SystemId, string> = {
   generic: '通用识别',
 }
 
-/** 可选的映射目标(基本字段 + 档案中的条目字段 + 附件) */
+/** 可选的映射目标(基本字段 + 档案中的条目字段 + 附件 + 开放题答案) */
 function buildPathOptions(profile: Profile): Array<{ path: string; label: string }> {
   const opts = Object.entries(FIELD_LABELS).map(([path, label]) => ({ path, label }))
   for (const [key, fields] of Object.entries(ITEM_FIELD_LABELS)) {
@@ -30,10 +30,17 @@ function buildPathOptions(profile: Profile): Array<{ path: string; label: string
   for (const [key, att] of Object.entries(profile.attachments)) {
     opts.push({ path: `attachments.${key}`, label: `附件 · ${att.name || key}` })
   }
+  for (const ans of profile.answers) {
+    opts.push({ path: `answers.${ans.id}`, label: `开放题 · ${ans.keywords.join('/') || ans.question}` })
+  }
   return opts
 }
 
 function previewValue(profile: Profile, path: string): string {
+  if (path.startsWith('answers.')) {
+    const ans = profile.answers.find((a) => a.id === path.slice('answers.'.length))
+    return ans?.answer ?? ''
+  }
   const v = getByPath(profile, path)
   if (v === undefined || v === null) return ''
   if (typeof v === 'string') return v
@@ -59,13 +66,13 @@ export default function App() {
 
   const pathOptions = useMemo(() => buildPathOptions(profile), [profile])
 
-  /** 规则映射 + 手动覆盖(面板内 + 持久化 overrides) */
+  /** 规则映射 + 手动覆盖(面板内 + 持久化 overrides)+ 开放题答案 */
   const [persistedOverrides, setPersistedOverrides] = useState<Overrides>({})
   const mappings: MappingResult[] = useMemo(() => {
     if (!scan) return []
     const scoped = { ...(persistedOverrides[scan.signature] ?? {}), ...userPaths }
-    return buildMappings(scan.fields, scoped)
-  }, [scan, persistedOverrides, userPaths])
+    return buildMappings(scan.fields, scoped, profile.answers)
+  }, [scan, persistedOverrides, userPaths, profile.answers])
 
   async function getActiveTabId(): Promise<number> {
     const res = await chrome.runtime.sendMessage({ type: MSG.GET_ACTIVE_TAB })
@@ -153,6 +160,9 @@ export default function App() {
         <button onClick={ping}>连接页面</button>
         <button onClick={handleScan} disabled={busy || conn !== 'connected'}>
           {busy ? '处理中…' : '扫描表单'}
+        </button>
+        <button className="ghost" onClick={() => chrome.runtime.openOptionsPage()}>
+          管理档案
         </button>
         <p className="meta">
           {conn === 'idle' && '先连接当前网申页面'}

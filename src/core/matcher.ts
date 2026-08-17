@@ -8,6 +8,7 @@ import {
   OPTION_ALIASES,
   REPEATER_RULES,
 } from './synonyms'
+import type { OpenAnswer } from './profile'
 import type { ScannedField } from '../shared/messages'
 
 /** 标签归一:全角转半角、小写、去空白/星号、去冒号与括号说明 */
@@ -58,16 +59,18 @@ export interface MappingResult {
   fieldId: string
   label: string
   path: string | null
-  source: 'override' | 'rule' | 'ambiguous' | 'none'
+  source: 'override' | 'rule' | 'answer' | 'ambiguous' | 'none'
 }
 
 /**
  * 为扫描出的字段构建映射。
  * @param overrides 当前页面结构签名下的手动映射 {fieldId -> 档案路径,''/ignore 表示跳过}
+ * @param answers 开放题答案库(标签含关键词时填入对应答案)
  */
 export function buildMappings(
   fields: ScannedField[],
   overrides: Record<string, string> = {},
+  answers: OpenAnswer[] = [],
 ): MappingResult[] {
   return fields.map((field) => {
     const override = overrides[field.fieldId]
@@ -85,11 +88,33 @@ export function buildMappings(
     if (match === AMBIGUOUS) {
       return { fieldId: field.fieldId, label: field.label, path: null, source: 'ambiguous' }
     }
-    if (!match) {
-      return { fieldId: field.fieldId, label: field.label, path: null, source: 'none' }
+    if (match) {
+      return { fieldId: field.fieldId, label: field.label, path: match.path, source: 'rule' }
     }
-    return { fieldId: field.fieldId, label: field.label, path: match.path, source: 'rule' }
+
+    // 开放题:文本字段标签命中答案库关键词
+    if (field.kind === 'text' && answers.length) {
+      const hit = matchAnswer(field.label, answers)
+      if (hit) return { fieldId: field.fieldId, label: field.label, path: `answers.${hit.id}`, source: 'answer' }
+    }
+    return { fieldId: field.fieldId, label: field.label, path: null, source: 'none' }
   })
+}
+
+/** 开放题匹配:标签包含答案库关键词,取关键词最长命中 */
+export function matchAnswer(label: string, answers: OpenAnswer[]): OpenAnswer | null {
+  const norm = normalizeLabel(label)
+  if (!norm) return null
+  let best: { ans: OpenAnswer; kwLen: number } | null = null
+  for (const ans of answers) {
+    for (const kw of ans.keywords) {
+      const k = normalizeLabel(kw)
+      if (k && norm.includes(k) && (!best || k.length > best.kwLen)) {
+        best = { ans, kwLen: k.length }
+      }
+    }
+  }
+  return best?.ans ?? null
 }
 
 /**

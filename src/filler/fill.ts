@@ -48,10 +48,10 @@ export async function executeFill(
   const anchored = collectFieldsWithAnchors(doc)
   const byId = new Map(anchored.map((a) => [a.field.fieldId, a]))
 
-  // 3. 生效映射 = 面板下发的指令(作为 override)+ 新增行字段按规则匹配
+  // 3. 生效映射 = 面板下发的指令(作为 override)+ 新增行字段按规则/答案库匹配
   const overrideMap: Record<string, string> = {}
   for (const ins of instructions) overrideMap[ins.fieldId] = ins.path
-  const effective = buildMappings(anchored.map((a) => a.field), overrideMap)
+  const effective = buildMappings(anchored.map((a) => a.field), overrideMap, profile.answers)
 
   // 4. 逐字段填写
   const outcomes: FillOutcome[] = []
@@ -79,7 +79,10 @@ async function fillOne(
   profile: Profile,
   doc: Document,
 ): Promise<FillOutcome> {
-  const value = getByPath(profile, path)
+  // 开放题答案:answers.<id> -> 取答案文本
+  const value = path.startsWith('answers.')
+    ? profile.answers.find((a) => a.id === path.slice('answers.'.length))?.answer
+    : getByPath(profile, path)
   const base = { fieldId: field.fieldId, label: field.label }
 
   // 附件类(证件照/简历等)
