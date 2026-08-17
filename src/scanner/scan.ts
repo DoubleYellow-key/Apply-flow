@@ -37,7 +37,10 @@ interface RepeaterInfo {
   rows: Element[]
 }
 
-export function scanDocument(doc: Document = document): ScanResult {
+/** 扫描并保留 DOM 锚点(filler 复用同一遍历逻辑定位元素) */
+export function collectFieldsWithAnchors(
+  doc: Document = document,
+): Array<{ field: ScannedField; anchor: Element }> {
   const repeaters = detectRepeaters(doc)
   const drafts: FieldDraft[] = []
   const consumed = new Set<Element>() // 已被下拉容器/radio 组吞并的原始控件
@@ -69,7 +72,7 @@ export function scanDocument(doc: Document = document): ScanResult {
       const group = [input, ...peers]
       group.forEach((g) => grouped.add(g))
       const anchor = group[0]
-      const label = type === 'radio' ? radioGroupLabel(anchor) : findLabel(anchor, doc)
+      const label = groupLabel(anchor)
       drafts.push({
         anchor,
         label: cleanLabel(label),
@@ -105,9 +108,9 @@ export function scanDocument(doc: Document = document): ScanResult {
     return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : pos & Node.DOCUMENT_POSITION_PRECEDING ? 1 : 0
   })
 
-  const fields: ScannedField[] = drafts.map((d, i) => {
+  return drafts.map((d, i) => {
     const rep = findRepeaterContext(d.anchor, repeaters)
-    return {
+    const field: ScannedField = {
       fieldId: `f${i}`,
       label: d.label,
       kind: d.kind,
@@ -116,8 +119,14 @@ export function scanDocument(doc: Document = document): ScanResult {
       repeaterId: rep?.id,
       rowIndex: rep?.rowIndex,
     }
+    return { field, anchor: d.anchor }
   })
+}
 
+/** 扫描页面,返回可序列化结果(经消息传回面板) */
+export function scanDocument(doc: Document = document): ScanResult {
+  const anchored = collectFieldsWithAnchors(doc)
+  const fields = anchored.map((a) => a.field)
   return {
     system: detectSystem(doc),
     url: location.href,
@@ -171,8 +180,8 @@ function inputOptionText(input: HTMLInputElement): string {
   return input.parentElement?.textContent?.trim() || input.value
 }
 
-/** radio 组标签:从选项外层 label 的兄弟找,再找 fieldset legend / 表格行首格 / aria */
-function radioGroupLabel(first: HTMLInputElement): string {
+/** radio/checkbox 组标签:从选项外层 label 的兄弟找,再找 fieldset legend / 表格行首格 / aria */
+function groupLabel(first: HTMLInputElement): string {
   // 选项常被 <label><input>男</label> 包裹,组标签在其外层 label 的兄弟里
   const wrap = first.closest('label') ?? first
   let sib = wrap.previousElementSibling as Element | null
