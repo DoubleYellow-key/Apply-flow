@@ -61,14 +61,17 @@ describe('scanDocument', () => {
     expect(result.system).toBe('generic')
   })
 
-  it('扫描出全部字段且 fieldId 按文档序编号', () => {
+  it('扫描出全部字段,fieldId 为内容稳定键', () => {
     const labels = result.fields.map((f) => f.label)
     expect(labels).toContain('姓名')
     expect(labels).toContain('性别')
     expect(labels).toContain('学历')
     expect(labels).toContain('毕业院校')
     expect(labels).toContain('学校')
-    expect(result.fields.map((f) => f.fieldId)).toEqual(result.fields.map((_, i) => `f${i}`))
+    const ids = result.fields.map((f) => f.fieldId)
+    expect(new Set(ids).size).toBe(ids.length) // 无重复
+    expect(result.fields.find((f) => f.label === '姓名')!.fieldId).toBe('top.姓名.text')
+    expect(result.fields.find((f) => f.label === '毕业院校')!.fieldId).toBe('top.毕业院校.dropdown')
   })
 
   it('控件类型与选项正确', () => {
@@ -97,6 +100,7 @@ describe('scanDocument', () => {
     expect(eduFields.filter((f) => f.rowIndex === 1)).toHaveLength(2)
     const school0 = eduFields.find((f) => f.rowIndex === 0 && f.label === '学校')
     expect(school0?.kind).toBe('text')
+    expect(school0?.fieldId).toBe('educations.0.学校.text')
   })
 
   it('生成结构签名', () => {

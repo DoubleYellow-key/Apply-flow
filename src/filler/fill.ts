@@ -3,9 +3,11 @@
 
 import type { FillOutcome, FillResult, ScannedField } from '../shared/messages'
 import { matchOption } from '../core/matcher'
+import { buildMappings } from '../core/matcher'
+import { ITEM_FIELD_RULES } from '../core/synonyms'
 import { getByPath, type Attachment, type Profile } from '../core/profile'
 import { dataUrlToFile } from '../core/file-utils'
-import { collectFieldsWithAnchors } from '../scanner/scan'
+import { addRepeaterRow, collectFieldsWithAnchors, detectRepeaters } from '../scanner/scan'
 
 export interface FillInstruction {
   fieldId: string
@@ -29,17 +31,43 @@ export async function executeFill(
   profile: Profile,
   doc: Document = document,
 ): Promise<FillResult> {
+  // 1. 重复区块增行:档案中非空条目多于页面行数时,点击「添加」补齐
+  for (const rep of detectRepeaters(doc)) {
+    if (!(rep.id in ITEM_FIELD_RULES)) continue
+    const items = (profile as unknown as Record<string, unknown[]>)[rep.id]
+    if (!Array.isArray(items)) continue
+    const needed = items.filter((it) =>
+      Object.values(it as Record<string, unknown>).some((v) => typeof v === 'string' && v.trim()),
+    ).length
+    for (let i = rep.rows.length; i < needed; i++) {
+      if (!(await addRepeaterRow(rep))) break
+    }
+  }
+
+  // 2. 重新收集字段(增行后 DOM 变化;稳定 fieldId 保证已有映射不错位)
   const anchored = collectFieldsWithAnchors(doc)
   const byId = new Map(anchored.map((a) => [a.field.fieldId, a]))
-  const outcomes: FillOutcome[] = []
 
+  // 3. 生效映射 = 面板下发的指令(作为 override)+ 新增行字段按规则匹配
+  const overrideMap: Record<string, string> = {}
+  for (const ins of instructions) overrideMap[ins.fieldId] = ins.path
+  const effective = buildMappings(anchored.map((a) => a.field), overrideMap)
+
+  // 4. 逐字段填写
+  const outcomes: FillOutcome[] = []
+  for (const m of effective) {
+    if (!m.path) continue
+    const entry = byId.get(m.fieldId)
+    if (!entry) continue
+    outcomes.push(await fillOne(entry.field, entry.anchor, m.path, profile, doc))
+  }
+
+  // 5. 指令中已不在页面的字段,报告失败
+  const present = new Set(effective.map((m) => m.fieldId))
   for (const ins of instructions) {
-    const entry = byId.get(ins.fieldId)
-    if (!entry) {
+    if (!present.has(ins.fieldId) && ins.path) {
       outcomes.push({ fieldId: ins.fieldId, label: ins.fieldId, status: 'failed', message: '页面上找不到该字段(可能已翻页)' })
-      continue
     }
-    outcomes.push(await fillOne(entry.field, entry.anchor, ins.path, profile, doc))
   }
   return { outcomes }
 }

@@ -8,7 +8,7 @@ import { findLabel, isVisible } from './label'
 
 const CONTROL_SELECTOR = 'input, textarea, select, [contenteditable="true"], [role="combobox"]'
 const SKIP_INPUT_TYPES = new Set(['submit', 'button', 'reset', 'image', 'hidden'])
-const ADD_TEXT_RE = /^(添加|新增|继续添加|再添加|再新增|添加一行|添加一条|\+{1,2})$/
+const ADD_TEXT_RE = /(添加|新增|继续添加|再加)/
 const ROW_CLASS_RE = /item|entry|row|group|card|block|repeat|section-item|list-/i
 
 /** 常见组件库的下拉容器 */
@@ -35,6 +35,7 @@ interface FieldDraft {
 interface RepeaterInfo {
   id: string
   rows: Element[]
+  addBtn: Element
 }
 
 /** 扫描并保留 DOM 锚点(filler 复用同一遍历逻辑定位元素) */
@@ -108,10 +109,17 @@ export function collectFieldsWithAnchors(
     return pos & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : pos & Node.DOCUMENT_POSITION_PRECEDING ? 1 : 0
   })
 
-  return drafts.map((d, i) => {
+  // 稳定 fieldId:同(区块+行+标签+类型)签名内按文档序计数
+  const seen = new Map<string, number>()
+  return drafts.map((d) => {
     const rep = findRepeaterContext(d.anchor, repeaters)
+    const scope = rep ? `${rep.id}.${rep.rowIndex}` : 'top'
+    const label = normalizeKey(d.label) || 'unlabeled'
+    const sig = `${scope}.${label}.${d.kind}`
+    const n = (seen.get(sig) ?? 0) + 1
+    seen.set(sig, n)
     const field: ScannedField = {
-      fieldId: `f${i}`,
+      fieldId: `${sig}${n > 1 ? `-${n}` : ''}`,
       label: d.label,
       kind: d.kind,
       options: d.options,
@@ -121,6 +129,15 @@ export function collectFieldsWithAnchors(
     }
     return { field, anchor: d.anchor }
   })
+}
+
+/** 标签转 id 片段:去掉非中英文数字字符 */
+function normalizeKey(s: string): string {
+  return s
+    .normalize('NFKC')
+    .replace(/[^\u4e00-\u9fa5a-z0-9]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
 }
 
 /** 扫描页面,返回可序列化结果(经消息传回面板) */
@@ -215,8 +232,8 @@ function looksLikeDateShim(el: HTMLInputElement): boolean {
   return /date|time|calendar|picker/i.test(el.className + ' ' + (el.getAttribute('onclick') ?? ''))
 }
 
-/** 检测重复区块:添加按钮 + 前方同类行容器 + 区块标题命中词典 */
-function detectRepeaters(doc: Document): RepeaterInfo[] {
+/** 检测重复区块:添加按钮 + 前方同类行容器 + 区块标题命中词典(未命中标题需 ≥2 行) */
+export function detectRepeaters(doc: Document): RepeaterInfo[] {
   const result: RepeaterInfo[] = []
   const seenContainers = new Set<Element>()
   let unknownCount = 0
@@ -225,24 +242,15 @@ function detectRepeaters(doc: Document): RepeaterInfo[] {
   for (const btn of addBtns) {
     const text = (btn.textContent ?? '').trim()
     const classHint = /add|plus|append/i.test(btn.className ?? '')
-    if (!(text.length <= 8 && ADD_TEXT_RE.test(text))) continue
+    if (!(text.length <= 10 && ADD_TEXT_RE.test(text))) continue
     if (!(btn.matches('button, [role="button"], a') || classHint)) continue
+    // 嵌套的容器文本会重复统计,取最内层候选
+    if (btn.querySelector('button, [role="button"], a')) continue
 
     const container = btn.parentElement
     if (!container || seenContainers.has(container)) continue
 
-    const siblings = [...container.children]
-    const btnIdx = siblings.indexOf(btn)
-    // 从按钮往前收集「同类行」:含控件、共享 class 特征或行式 class
-    const rows: Element[] = []
-    for (let i = btnIdx - 1; i >= 0; i--) {
-      const sib = siblings[i]
-      if (!sib.querySelector(CONTROL_SELECTOR)) break
-      const cls = sib.getAttribute('class') ?? ''
-      if (rows.length === 0 || shareClassToken(sib, rows[rows.length - 1]) || ROW_CLASS_RE.test(cls)) {
-        rows.unshift(sib)
-      } else break
-    }
+    const rows = collectRowsBefore(btn)
     if (rows.length === 0) continue
     seenContainers.add(container)
 
@@ -258,14 +266,58 @@ function detectRepeaters(doc: Document): RepeaterInfo[] {
       ps = ps.previousElementSibling as Element | null
     }
     if (!title) {
-      const firstNonRow = siblings.find((s) => !rows.includes(s) && (s.textContent ?? '').trim().length <= 15)
+      const firstNonRow = [...container.children].find(
+        (s) => !rows.includes(s) && (s.textContent ?? '').trim().length <= 15,
+      )
       title = (firstNonRow?.textContent ?? '').trim()
     }
 
-    const id = matchRepeaterTitle(title) ?? `unknown-${++unknownCount}`
-    result.push({ id, rows })
+    const known = matchRepeaterTitle(title)
+    if (!known && rows.length < 2) continue // 单行且标题未命中:多半不是重复区块
+    const id = known ?? `unknown-${++unknownCount}`
+    result.push({ id, rows, addBtn: btn })
   }
   return result
+}
+
+/** 添加按钮前方同类行(含控件、共享 class 特征) */
+function collectRowsBefore(addBtn: Element): Element[] {
+  const container = addBtn.parentElement
+  if (!container) return []
+  const siblings = [...container.children]
+  const btnIdx = siblings.indexOf(addBtn)
+  const rows: Element[] = []
+  for (let i = btnIdx - 1; i >= 0; i--) {
+    const sib = siblings[i]
+    if (!sib.querySelector(CONTROL_SELECTOR)) break
+    const cls = sib.getAttribute('class') ?? ''
+    if (rows.length === 0 || shareClassToken(sib, rows[rows.length - 1]) || ROW_CLASS_RE.test(cls)) {
+      rows.unshift(sib)
+    } else break
+  }
+  return rows
+}
+
+/** 点击添加按钮并等待新行出现,返回新行(超时返回 null) */
+export async function addRepeaterRow(rep: RepeaterInfo, timeoutMs = 2500): Promise<Element | null> {
+  const container = rep.addBtn.parentElement
+  if (!container) return null
+  const beforeRows = collectRowsBefore(rep.addBtn).length
+  const beforeControls = container.querySelectorAll(CONTROL_SELECTOR).length
+
+  const btn = rep.addBtn as HTMLElement
+  btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+  btn.click()
+
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 150))
+    const controls = container.querySelectorAll(CONTROL_SELECTOR).length
+    if (controls <= beforeControls) continue
+    const rows = collectRowsBefore(rep.addBtn)
+    if (rows.length > beforeRows) return rows[rows.length - 1]
+  }
+  return null
 }
 
 function shareClassToken(a: Element, b: Element): boolean {

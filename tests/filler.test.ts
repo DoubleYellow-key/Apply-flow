@@ -134,7 +134,9 @@ describe('executeFill', () => {
   })
 
   it('页面上不存在的 fieldId 失败', async () => {
-    const { outcomes } = await executeFill([{ fieldId: 'f999', path: 'basic.name' }], profile)
-    expect(outcomes[0].status).toBe('failed')
+    const { outcomes } = await executeFill([{ fieldId: 'top.不存在.text', path: 'basic.name' }], profile)
+    const miss = outcomes.find((o) => o.fieldId === 'top.不存在.text')
+    expect(miss?.status).toBe('failed')
+    expect(miss?.message).toContain('找不到')
   })
 })
