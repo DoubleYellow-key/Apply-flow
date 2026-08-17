@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { executeFill, type FillInstruction } from '../src/filler/fill'
+import { executeFill } from '../src/filler/fill'
 import { createEmptyProfile, type Profile } from '../src/core/profile'
 
 const FIXTURE = `

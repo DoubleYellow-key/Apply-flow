@@ -68,7 +68,7 @@ async function fillOne(
   if (Array.isArray(value)) {
     const values = value.map(String).filter(Boolean)
     if (!values.length) return { ...base, status: 'skipped', message: '档案中该字段为空' }
-    if (field.kind === 'checkbox') return fillCheckboxes(anchor, values, doc, base)
+    if (field.kind === 'checkbox') return fillCheckboxes(anchor as HTMLInputElement, values, doc, base)
     return { ...base, status: 'skipped', message: '该字段不支持数组值' }
   }
 

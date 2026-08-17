@@ -12,6 +12,11 @@ export const MSG = {
   GET_ACTIVE_TAB: 'GET_ACTIVE_TAB',
 } as const
 
+export interface FillRequest {
+  type: typeof MSG.FILL
+  instructions: Array<{ fieldId: string; path: string }>
+}
+
 /** 识别到的网申系统 */
 export type SystemId = 'moka' | 'beisen' | 'generic'
 
