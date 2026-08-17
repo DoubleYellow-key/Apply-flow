@@ -11,11 +11,11 @@ const SECTION_DEFS: Array<{ key: string; re: RegExp }> = [
   { key: 'projects', re: /(项目|科研)(经历|经验|背景)?/ },
   { key: 'awards', re: /(获奖|荣誉|奖项|证书|奖学金)(情况|经历)?/ },
   { key: 'skills', re: /(专业)?技能(特长)?|技能(水平)?/ },
-  { key: 'selfEvaluation', re: /(自我|个人)(评价|介绍|简介)/ },
+  { key: 'selfEvaluation', re: /(自我|个人)(评价|介绍|简介|优势)/ },
 ]
 
-const DATE_RANGE_RE =
-  /(\d{4}\s*[./年-]\s*\d{1,2}?)?\s*(?:[-–—~至到]|至今)\s*(\d{4}\s*[./年-]\s*\d{1,2}?|至今)?/
+/** 整行只由日期字符构成(如「2026.07-至今」单独成行的版式) */
+const DATE_ONLY_RE = /^[\d\s.．\-–~至今年月]+$/
 
 const SCHOOL_RE = /([\u4e00-\u9fa5A-Za-z（）()]{2,20}?(?:大学|学院|学校|研究院|研究所))/
 const DEGREE_RE = /(博士|硕士研究生|硕士|研究生|本科|大专|专科|学士)/
@@ -40,7 +40,7 @@ function extractDateRange(line: string): { start: string; end: string; rest: str
   const m = line.match(
     /(\d{4}\s*[./年]\s*\d{1,2}\s*月?)?\s*[-–—~至到]\s*(\d{4}\s*[./年]\s*\d{1,2}\s*月?|至今)?/,
   )
-  if (!m || (!m[1] && !m[2])) return { start: '', end: '', rest: line }
+  if (!m || m.index === undefined || (!m[1] && !m[2])) return { start: '', end: '', rest: line }
   const start = m[1] ? normalizeDate(m[1]) : ''
   const end = m[2] && m[2] !== '至今' ? normalizeDate(m[2]) : ''
   const rest = (line.slice(0, m.index) + ' ' + line.slice(m.index + m[0].length)).trim()
@@ -113,8 +113,23 @@ function parseEntryBlocks(
   return blocks
 }
 
+/** 把「日期单独一行 + 内容在下一行」的版式合并成一行 */
+function mergeDateOnlyLines(lines: string[]): string[] {
+  const out: string[] = []
+  for (const line of lines) {
+    const prev = out[out.length - 1]
+    if (prev !== undefined && DATE_ONLY_RE.test(prev) && /\d{4}/.test(prev) && !DATE_ONLY_RE.test(line)) {
+      out[out.length - 1] = `${prev} ${line}`
+    } else {
+      out.push(line)
+    }
+  }
+  return out
+}
+
 function parseWorks(lines: string[]): Work[] {
-  const blocks = parseEntryBlocks(lines, (line) => !!line.match(COMPANY_RE) || /\d{4}\s*[./年]/.test(line))
+  const merged = mergeDateOnlyLines(lines)
+  const blocks = parseEntryBlocks(merged, (line) => !!line.match(COMPANY_RE) || /\d{4}\s*[./年]/.test(line))
   return blocks.map((block) => {
     const head = block[0]
     const { start, end, rest } = extractDateRange(head)
@@ -139,7 +154,8 @@ function parseWorks(lines: string[]): Work[] {
 }
 
 function parseProjects(lines: string[]): Project[] {
-  const blocks = parseEntryBlocks(lines, (line) => /\d{4}\s*[./年]/.test(line))
+  const merged = mergeDateOnlyLines(lines)
+  const blocks = parseEntryBlocks(merged, (line) => /\d{4}\s*[./年]/.test(line))
   return blocks.map((block) => {
     const { start, end, rest } = extractDateRange(block[0])
     const parts = rest.split(/[|\s·]{1,3}/).filter(Boolean)
@@ -174,6 +190,15 @@ function extractName(lines: string[]): string {
   return ''
 }
 
+/** 从头部信息行提取性别(「男 | 24岁 | ...」形态) */
+function extractGender(lines: string[]): string {
+  for (const line of lines.slice(0, 6)) {
+    const m = line.match(/(?:^|[|\s,，·])(男|女)(?:[|\s,，·]|$)/)
+    if (m) return m[1]
+  }
+  return ''
+}
+
 export function parseResumeText(text: string): ParsedDraft {
   const lines = text
     .split(/\r?\n/)
@@ -184,15 +209,16 @@ export function parseResumeText(text: string): ParsedDraft {
   const email = text.match(EMAIL_RE)?.[0] ?? ''
   const idNumber = text.match(ID_RE)?.[0] ?? ''
   const name = extractName(lines)
+  const gender = extractGender(lines)
 
-  // 按章节切分
+  // 按章节切分;同章节再次出现(如子标题「实习成果」误命中)不重置,继续追加
   const sections = new Map<string, string[]>()
   let currentKey = '_top'
   for (const line of lines) {
     const key = sectionKeyOf(line)
     if (key) {
       currentKey = key
-      sections.set(key, [])
+      if (!sections.has(key)) sections.set(key, [])
     } else {
       const arr = sections.get(currentKey) ?? []
       arr.push(line)
@@ -208,7 +234,7 @@ export function parseResumeText(text: string): ParsedDraft {
   const selfEvaluation = (sections.get('selfEvaluation') ?? []).join('\n')
 
   return {
-    basic: { name, phone, email, idNumber },
+    basic: { name, gender, phone, email, idNumber },
     educations,
     works,
     projects,

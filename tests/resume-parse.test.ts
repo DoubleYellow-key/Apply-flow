@@ -77,3 +77,67 @@ describe('parseResumeText', () => {
     expect(draft.selfEvaluation).toContain('学习能力强')
   })
 })
+
+// 真实简历版式(取自 docs/黄信凯简历.pdf 的 pdfjs 提取结果):
+// 日期单独成行、公司名下一行、项目日期在行尾、自我评价叫「个人优势」
+const REAL_LIKE = `
+黄信凯
+男 | 年龄：24岁 | 15089509332 | 1642964789@qq.com
+个人优势
+1. 熟悉 Go 语言及高并发编程,具备使用 Gin 等 Web 框架开发 RESTful API 的经验。
+2. 熟悉 Python 语言,具备 FastAPI、Flask 等后端框架开发经验。
+
+实习经历
+2026.07-至今
+巨量均衡私募证券基金管理（珠海）有限公司 全栈
+内容：
+多券商 API 数据处理： 对接 6 家托管机构 API,实现持仓、净值等数据自动拉取。
+实习成果：
+建立完整运营数据链路,支撑多托管来源的统一查询。
+
+项目经历
+云原生网络安全蜜网系统（组内实验室项目） 项目开发 2024.11-至今
+内容:
+项目描述：云原生架构的分布式蜜场系统。
+技术栈：Go（Gin）+ Vue.js + Kubernetes + Docker
+
+教育背景
+2022.09-2025.06 广州大学 大数据技术与工程 硕士
+2018.09-2022.06 江西财经大学 信息管理与信息系统 本科
+`
+
+describe('parseResumeText(真实版式)', () => {
+  const draft = parseResumeText(REAL_LIKE)
+
+  it('头部行提取姓名/性别/手机/邮箱', () => {
+    expect(draft.basic.name).toBe('黄信凯')
+    expect(draft.basic.gender).toBe('男')
+    expect(draft.basic.phone).toBe('15089509332')
+    expect(draft.basic.email).toBe('1642964789@qq.com')
+  })
+
+  it('「个人优势」并入自我评价', () => {
+    expect(draft.selfEvaluation).toContain('Go 语言')
+  })
+
+  it('日期单独成行的实习经历:公司与职位正确聚合', () => {
+    expect(draft.works).toHaveLength(1)
+    expect(draft.works[0].company).toBe('巨量均衡私募证券基金管理（珠海）有限公司')
+    expect(draft.works[0].position).toBe('全栈')
+    expect(draft.works[0].startDate).toBe('2026-07')
+    expect(draft.works[0].endDate).toBe('') // 至今 -> 留空人工填
+    expect(draft.works[0].description).toContain('多券商')
+  })
+
+  it('日期在行尾的项目经历', () => {
+    expect(draft.projects).toHaveLength(1)
+    expect(draft.projects[0].name).toContain('蜜网系统')
+    expect(draft.projects[0].role).toBe('项目开发')
+    expect(draft.projects[0].startDate).toBe('2024-11')
+  })
+
+  it('教育经历在文末也能提取', () => {
+    expect(draft.educations).toHaveLength(2)
+    expect(draft.educations[0].school).toBe('广州大学')
+  })
+})

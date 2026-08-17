@@ -7,6 +7,7 @@ export type { Award, Education, Project, Work }
 export interface ParsedDraft {
   basic: Partial<{
     name: string
+    gender: string
     phone: string
     email: string
     idNumber: string
